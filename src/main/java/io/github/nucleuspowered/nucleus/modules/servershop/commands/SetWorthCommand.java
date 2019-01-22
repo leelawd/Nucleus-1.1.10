@@ -7,7 +7,6 @@ package io.github.nucleuspowered.nucleus.modules.servershop.commands;
 import com.google.common.collect.ImmutableMap;
 import io.github.nucleuspowered.nucleus.Nucleus;
 import io.github.nucleuspowered.nucleus.Util;
-import io.github.nucleuspowered.nucleus.argumentparsers.ItemAliasArgument;
 import io.github.nucleuspowered.nucleus.configurate.datatypes.ItemDataNode;
 import io.github.nucleuspowered.nucleus.dataservices.ItemDataService;
 import io.github.nucleuspowered.nucleus.internal.EconHelper;
@@ -26,11 +25,10 @@ import org.spongepowered.api.command.args.GenericArguments;
 import org.spongepowered.api.text.Text;
 import org.spongepowered.api.util.annotation.NonnullByDefault;
 
+import javax.inject.Inject;
 import java.util.Optional;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
-
-import javax.inject.Inject;
 
 /**
  * Sets or unsets an item's worth for either buying or selling.
@@ -58,15 +56,16 @@ public class SetWorthCommand extends AbstractCommand<CommandSource> {
     @Override
     public CommandElement[] getArguments() {
         return new CommandElement[] {
-            GenericArguments.optionalWeak(new ItemAliasArgument(Text.of(item))),
-            GenericArguments.choices(Text.of(type), ImmutableMap.of("buy", Type.BUY, "sell", Type.SELL)),
-            GenericArguments.doubleNum(Text.of(cost))
+                GenericArguments.choices(Text.of(type), ImmutableMap.of("buy", Type.BUY, "sell", Type.SELL)),
+                GenericArguments.doubleNum(Text.of(cost)),
+                GenericArguments.optionalWeak(GenericArguments.string(Text.of(this.item)))
         };
     }
 
     @Override
     public CommandResult executeCommand(CommandSource src, CommandContext args) throws Exception {
-        String id = getCatalogTypeFromHandOrArgs(src, item, args).getId();
+        //String id = getCatalogTypeFromHandOrArgs(src, this.item, args).getId();
+        String itemID = getItemIDFromHandOrArgs(src, this.item, args);
         Type transactionType = args.<Type>getOne(type).get();
         double newCost = args.<Double>getOne(cost).get();
         if (newCost < 0) {
@@ -74,7 +73,7 @@ public class SetWorthCommand extends AbstractCommand<CommandSource> {
         }
 
         // Get the item from the system.
-        ItemDataNode node = itemDataService.getDataForItem(id);
+        ItemDataNode node = itemDataService.getDataForItem(itemID);
 
         // Get the current item worth.
         double currentWorth = transactionType.getter.apply(node);
@@ -91,8 +90,8 @@ public class SetWorthCommand extends AbstractCommand<CommandSource> {
         }
 
         String name;
-        Optional<CatalogType> type = Util.getCatalogTypeForItemFromId(id);
-        name = type.map(Util::getTranslatableIfPresentOnCatalogType).orElse(id);
+        Optional<CatalogType> type = Util.getCatalogTypeForItemFromId(itemID);
+        name = type.map(Util::getTranslatableIfPresentOnCatalogType).orElse(itemID);
 
         if (currentWorth == newCost) {
             if (currentWorth < 0) {
@@ -106,7 +105,7 @@ public class SetWorthCommand extends AbstractCommand<CommandSource> {
 
         // Set the item worth.
         transactionType.setter.accept(node, newCost);
-        itemDataService.setDataForItem(id, node);
+        itemDataService.setDataForItem(itemID, node);
 
         // Tell the user.
         if (currentWorth == -1) {

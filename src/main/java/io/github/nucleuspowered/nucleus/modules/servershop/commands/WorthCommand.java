@@ -22,6 +22,8 @@ import org.spongepowered.api.command.CommandSource;
 import org.spongepowered.api.command.args.CommandContext;
 import org.spongepowered.api.command.args.CommandElement;
 import org.spongepowered.api.command.args.GenericArguments;
+import org.spongepowered.api.data.type.HandTypes;
+import org.spongepowered.api.entity.living.player.Player;
 import org.spongepowered.api.text.Text;
 
 import javax.inject.Inject;
@@ -39,17 +41,18 @@ public class WorthCommand extends AbstractCommand<CommandSource> {
     @Override
     public CommandElement[] getArguments() {
         return new CommandElement[] {
-            GenericArguments.optionalWeak(new ItemAliasArgument(Text.of(item)))
+                GenericArguments.optionalWeak(GenericArguments.string(Text.of(this.item)))
         };
     }
 
     @Override
     public CommandResult executeCommand(CommandSource src, CommandContext args) throws Exception {
-        CatalogType type = getCatalogTypeFromHandOrArgs(src, item, args);
-        String id = type.getId();
+        CatalogType type = getCatalogTypeFromHandOrArgs(src, this.item, args);
+        //String id = type.getId();
+        String itemID = getItemIDFromHandOrArgs(src, this.item, args);
 
         // Get the item from the system.
-        ItemDataNode node = itemDataService.getDataForItem(id);
+        ItemDataNode node = itemDataService.getDataForItem(itemID);
 
         // Get the current item worth.
         MessageProvider provider = plugin.getMessageProvider();
@@ -62,8 +65,11 @@ public class WorthCommand extends AbstractCommand<CommandSource> {
 
         StringBuilder stringBuilder = new StringBuilder();
 
+        Player player = (Player) src;
+        int quantity = player.getItemInHand(HandTypes.MAIN_HAND).get().getQuantity();
+
         if (buyPrice >= 0) {
-            stringBuilder.append(provider.getMessageWithFormat("command.worth.buy", econHelper.getCurrencySymbol(node.getServerBuyPrice())));
+            stringBuilder.append(provider.getMessageWithFormat("command.worth.buy", String.valueOf(quantity), this.econHelper.getCurrencySymbol(node.getServerBuyPrice() * quantity)));
         }
 
         if (sellPrice >= 0) {
@@ -71,13 +77,13 @@ public class WorthCommand extends AbstractCommand<CommandSource> {
                 stringBuilder.append(" - ");
             }
 
-            stringBuilder.append(provider.getMessageWithFormat("command.worth.sell", econHelper.getCurrencySymbol(node.getServerSellPrice())));
+            stringBuilder.append(provider.getMessageWithFormat("command.worth.sell", String.valueOf(quantity) , this.econHelper.getCurrencySymbol(node.getServerSellPrice() * quantity)));
         }
 
         if (stringBuilder.length() == 0) {
-            src.sendMessage(provider.getTextMessageWithFormat("command.worth.nothing", Util.getTranslatableIfPresentOnCatalogType(type)));
+            src.sendMessage(provider.getTextMessageWithFormat("command.worth.nothing", itemID));
         } else {
-            src.sendMessage(provider.getTextMessageWithFormat("command.worth.something", Util.getTranslatableIfPresentOnCatalogType(type), stringBuilder.toString()));
+            src.sendMessage(provider.getTextMessageWithFormat("command.worth.something", itemID, stringBuilder.toString()));
         }
 
         return CommandResult.success();
