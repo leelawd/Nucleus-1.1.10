@@ -1,0 +1,4 @@
+rootProject.name = 'Nucleus'
+include 'nucleus-api'
+include 'nucleus-ap'
+

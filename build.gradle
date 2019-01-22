@@ -1,0 +1,188 @@
+plugins {
+    id 'idea'
+    id 'eclipse'
+    id 'com.github.hierynomus.license' version '0.12.1'
+    id 'ninja.miserable.blossom' version '1.0.1'
+    id 'maven'
+    id 'com.github.johnrengelman.shadow' version '1.2.3'
+    id 'java'
+    // id "com.qixalite.spongestart" version "1.4.3"
+}
+
+project.ext.versionno = '1.1.10'
+project.ext.minecraftversion = '1.10.2'
+project.ext.spongeapiversion = '5.1'
+project.ext.suffix = '-LTS-COMMUNITY-Modified'
+
+allprojects {
+    apply plugin: 'java'
+
+    version = rootProject.versionno + rootProject.suffix + '-S' + rootProject.spongeapiversion
+
+    repositories {
+        jcenter()
+        maven {
+            name 'Sponge maven repo'
+            url 'http://repo.spongepowered.org/maven'
+        }
+    }
+
+    task javadocJar(type: Jar, dependsOn: javadoc) {
+        classifier = 'javadoc'
+        from javadoc.destinationDir
+        archiveName = "Nucleus-${version}-api-javadocs.jar"
+    }
+}
+
+description = 'The Ultimate Essentials Plugin.'
+ext.url = 'http://nucleuspowered.org'
+
+group 'io.github.nucleuspowered'
+
+ext.spongeapi = '5.1.0'
+
+def mixinversion = '0.25.1-5.1'
+def qsmlDep = "uk.co.drnaylor:quickstart-moduleloader:0.9.0"
+def geoIpDep = 'com.maxmind.geoip2:geoip2:2.8.0'
+def mixinDep = "io.github.nucleuspowered:NucleusMixins:" + mixinversion
+def neutrinoDep = 'io.github.nucleuspowered:neutrino:1.0.0'
+
+defaultTasks 'licenseFormat build'
+
+repositories {
+    jcenter()
+    maven {
+        name 'Sponge maven repo'
+        url 'http://repo.spongepowered.org/maven'
+    }
+    maven {
+        name 'drnaylor-minecraft'
+        url 'http://repo.drnaylor.co.uk/artifactory/list/minecraft'
+    }
+    maven {
+        name 'drnaylor'
+        url 'http://repo.drnaylor.co.uk/artifactory/list/quickstart'
+    }
+    maven {
+        url 'https://jitpack.io'
+    }
+}
+
+dependencies {
+    compile project(":nucleus-ap")
+    compile project(":nucleus-api", {
+        ext.versionno = versionno
+        ext.suffix = suffix
+    })
+    compile "org.spongepowered:spongeapi:" + project.ext.spongeapi
+    compile qsmlDep
+    compile neutrinoDep
+    compile (mixinDep) {
+        exclude module: 'mixin'
+        exclude module: 'launchwrapper'
+        exclude module: 'guava'
+    }
+
+    // For Geo IP
+    compile geoIpDep
+
+    testCompile "junit:junit:4.12"
+    testCompile "org.mockito:mockito-all:1.10.19"
+    testCompile "org.powermock:powermock-module-junit4:1.6.4"
+    testCompile "org.powermock:powermock-api-mockito:1.6.4"
+    testCompile "org.hamcrest:hamcrest-junit:2.0.0.0"
+}
+
+license {
+    ext.name = project.name
+
+    exclude "**/*.info"
+    exclude "assets/**"
+    exclude "*.properties"
+    exclude "*.txt"
+
+    header file('HEADER.txt')
+    sourceSets = project.sourceSets
+
+    ignoreFailures false
+    strictCheck true
+
+    mapping {
+        java = 'SLASHSTAR_STYLE'
+    }
+}
+
+blossom {
+    def location = 'src/main/java/io/github/nucleuspowered/nucleus/PluginInfo.java'
+
+    replaceToken '@name@', project.name, location
+    replaceToken '@version@', project.version, location
+    replaceToken '@gitHash@', getGitHash(), location
+
+    replaceToken '@description@', project.description, location
+    replaceToken '@url@', project.url, location
+    replaceToken '@mixinversion@', mixinversion, location
+}
+
+jar {
+    manifest {
+        attributes  'Implementation-Title': project.name,
+                'Implementation-Version': version,
+                'SpongeAPI-Version': project.spongeapi,
+                'Git-Hash': getGitHash()
+    }
+}
+
+shadowJar {
+    dependencies {
+        include(project(":nucleus-api"))
+        include(dependency(qsmlDep))
+        include(dependency(geoIpDep))
+        include(dependency(neutrinoDep))
+        include(dependency("com.maxmind.db:maxmind-db"))
+        include(dependency("com.fasterxml.jackson.core:jackson-core"))
+        include(dependency("com.fasterxml.jackson.core:jackson-databind"))
+        include(dependency("com.fasterxml.jackson.core:jackson-annotations"))
+        include(dependency("io.github.lukehutch:fast-classpath-scanner"))
+    }
+
+    relocate 'com.maxmind.geoip2', 'io.github.nucleuspowered.relocate.com.maxmind.geoip2'
+    relocate 'com.maxmind.db', 'io.github.nucleuspowered.relocate.com.maxmind.db'
+    relocate 'com.fasterxml.jackson', 'io.github.nucleuspowered.relocate.com.fasterxml.jackson'
+
+    if (!project.hasProperty('norelocate')) {
+        relocate 'uk.co.drnaylor', 'io.github.nucleuspowered.relocate.uk.co.drnaylor'
+        relocate 'io.github.nucleuspowered.neutrino', 'io.github.nucleuspowered.relocate.nucleus.neutrino'
+        relocate 'io.github.lukehutch', 'io.github.nucleuspowered.relocate.io.github.lukehutch'
+    }
+
+    exclude "io/github/nucleuspowered/nucleus/api/NucleusAPIMod.class"
+    archiveName = "Nucleus-${version}-MC${project.ext.minecraftversion}-plugin.jar"
+}
+shadowJar.dependsOn([':nucleus-api:build'])
+
+task cleanJars() {
+    project.file('output').listFiles().each {
+        x -> if (x.name.endsWith("jar")) { x.delete() }
+    }
+}
+
+task copyJars(type: Copy, dependsOn: ':nucleus-api:build') {
+    from([subprojects.jar, subprojects.javadocJar, shadowJar])
+    into project.file('output')
+}
+
+artifacts {
+    archives shadowJar
+}
+
+static String getGitHash() {
+    def process = 'git rev-parse --short HEAD'.execute()
+    process.waitFor()
+    return process.exitValue() ? 'unknown' : process.text.trim()
+}
+
+clean.dependsOn(cleanJars)
+copyJars.mustRunAfter(cleanJars)
+build.dependsOn(shadowJar)
+build.dependsOn(copyJars)

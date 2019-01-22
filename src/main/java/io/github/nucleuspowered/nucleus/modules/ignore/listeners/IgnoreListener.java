@@ -1,0 +1,126 @@
+/*
+ * This file is part of Nucleus, licensed under the MIT License (MIT). See the LICENSE.txt file
+ * at the root of this project for more details.
+ */
+package io.github.nucleuspowered.nucleus.modules.ignore.listeners;
+
+import com.google.common.collect.Lists;
+import io.github.nucleuspowered.nucleus.Nucleus;
+import io.github.nucleuspowered.nucleus.api.chat.NucleusNoIgnoreChannel;
+import io.github.nucleuspowered.nucleus.api.events.NucleusMailEvent;
+import io.github.nucleuspowered.nucleus.api.events.NucleusMessageEvent;
+import io.github.nucleuspowered.nucleus.dataservices.loaders.UserDataManager;
+import io.github.nucleuspowered.nucleus.internal.CommandPermissionHandler;
+import io.github.nucleuspowered.nucleus.internal.ListenerBase;
+import io.github.nucleuspowered.nucleus.modules.core.config.CoreConfigAdapter;
+import io.github.nucleuspowered.nucleus.modules.ignore.commands.IgnoreCommand;
+import io.github.nucleuspowered.nucleus.modules.ignore.datamodules.IgnoreUserDataModule;
+import org.spongepowered.api.entity.living.player.Player;
+import org.spongepowered.api.entity.living.player.User;
+import org.spongepowered.api.event.Listener;
+import org.spongepowered.api.event.Order;
+import org.spongepowered.api.event.filter.cause.Root;
+import org.spongepowered.api.event.message.MessageChannelEvent;
+import org.spongepowered.api.text.channel.MessageReceiver;
+import org.spongepowered.api.text.channel.MutableMessageChannel;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
+
+import javax.inject.Inject;
+
+public class IgnoreListener extends ListenerBase {
+
+    @Inject private UserDataManager loader;
+    @Inject private CoreConfigAdapter cca;
+    private CommandPermissionHandler ignoreHandler = Nucleus.getNucleus().getPermissionRegistry().getPermissionsForNucleusCommand(IgnoreCommand.class);
+
+    @Listener(order = Order.LATE)
+    public void onChat(MessageChannelEvent.Chat event, @Root Player player) {
+        if (event.getChannel().orElseGet(event::getOriginalChannel) instanceof NucleusNoIgnoreChannel) {
+            return;
+        }
+
+        // Reset the channel - but only if we have to.
+        checkCancels(event.getChannel().orElseGet(event::getOriginalChannel).getMembers(), player).ifPresent(x -> {
+            MutableMessageChannel mmc = event.getChannel().orElseGet(event::getOriginalChannel).asMutable();
+            x.forEach(mmc::removeMember);
+            event.setChannel(mmc);
+        });
+    }
+
+    @Listener(order = Order.FIRST)
+    public void onMessage(NucleusMessageEvent event, @Root Player player) {
+        if (event.getRecipient() instanceof User) {
+            try {
+                event.setCancelled(loader.get((User) event.getRecipient()).get()
+                        .get(IgnoreUserDataModule.class)
+                        .getIgnoreList().contains(player.getUniqueId()));
+            } catch (Exception e) {
+                if (plugin.isDebugMode()) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    @Listener(order = Order.FIRST)
+    public void onMail(NucleusMailEvent event, @Root Player player) {
+        try {
+            event.setCancelled(loader.get(event.getRecipient()).get()
+                    .get(IgnoreUserDataModule.class)
+                    .getIgnoreList().contains(player.getUniqueId()));
+        } catch (Exception e) {
+            if (plugin.isDebugMode()) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    /**
+     * Checks if we need to cancel messages to people.
+     *
+     * @param collection The collection to check through.
+     * @param player The subject who is sending the message.
+     * @return {@link Optional} if unchanged, otherwise a {@link Collection} of {@link MessageReceiver}s to remove
+     */
+    private Optional<Collection<MessageReceiver>> checkCancels(Collection<MessageReceiver> collection, Player player) {
+        if (ignoreHandler.testSuffix(player, "exempt.chat")) {
+            return Optional.empty();
+        }
+
+        List<MessageReceiver> list = Lists.newArrayList(collection);
+        list.removeIf(x -> {
+            try {
+                if (!(x instanceof Player)) {
+                    // Remove if not a player.
+                    return true;
+                }
+
+                if (x.equals(player)) {
+                    // Remove if the same player.
+                    return true;
+                }
+
+                // Don't remove if they are in the list.
+                return !loader.get((Player) x).map(y ->
+                        y.get(IgnoreUserDataModule.class).getIgnoreList().contains(player.getUniqueId())).orElse(false);
+            } catch (Exception e) {
+                if (plugin.isDebugMode()) {
+                    e.printStackTrace();
+                }
+
+                // Remove them.
+                return true;
+            }
+        });
+
+        // We do this so we don't have to recreate a channel if nothing changes.
+        if (list.isEmpty()) {
+            return Optional.empty();
+        }
+
+        return Optional.of(list);
+    }
+}
